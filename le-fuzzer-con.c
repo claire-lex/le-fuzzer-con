@@ -19,12 +19,22 @@
 
 #define USAGE ""							\
   "./le-fuzzer-con [-h] [-v] [-m min_size] [-n max_size] [-l locked_bytes]\n" \
-  "                [-b locked_bits] host (--help)" \
+  "                host (--help)" \
   "\n"
 #define HELP "" \
-  "Another dumb network fuzzer, but not the worst one." \
+  "Another dumb network fuzzer, but not the worst one.\n" \
+  "Generates network packets for fuzzing with random content except for bytes\n" \
+  "that should not be random to be accepted by the remote server (e.g. headers)." \
+  "\n\n" \
+  "  host            Target information with format proto://ip:port.\n" \
+  "                  Ex: udp://192.168.1.1:3671" \
   "\n\n" \
   "Arguments:\n" \
+  "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
+  "                  location1:content1;loc2:con2;... (eg: 0:\\x06\\x10;2:\\x21).\n" \
+  "  -m    --min     Minimum size for packets.\n" \
+  "  -n    --max     Maximum size for packets.\n" \
+  "  -v    --verbose Verbose mode.\n" \
   "\n"
 
 #define MIN_SIZE 0
@@ -329,6 +339,23 @@ void megafree(args_t *settings) {
 }
 
 /*****************************************************************************/
+/* Network                                                                      */
+/*****************************************************************************/
+
+int create_socket(args_t *settings) {
+  int sock;
+
+  sock = -1;
+  if (!strcmp(settings->target.proto, "udp"))
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+  else if (!strcmp(settings->target.proto, "tcp"))
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0)
+    return(ERROR("Failed to create socket."));
+  return (sock);
+}
+
+/*****************************************************************************/
 /* Fuzz                                                                      */
 /*****************************************************************************/
 
@@ -351,25 +378,55 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
 }
 
 int fuzz(args_t *settings) {
+  struct sockaddr_in addr;
   unsigned int size;
+  unsigned int ct;
   char *packet;
+  int sock;
+  int ret;
 
+  ret = 0;
   LOOP = true;
-  for (unsigned int i = 0; i < 10; i++) { /* Will be infinite loop :) */
-    if (LOOP == false)
-      break ;
+  if ((sock = create_socket(settings)) < 0)
+    return (-1);
+  memset(&addr, 0, sizeof(struct sockaddr_in));
+  addr.sin_family = AF_INET;
+  addr.sin_addr = settings->target.ip;
+  addr.sin_port = htons(settings->target.port);
+  if (!strcmp(settings->target.proto, "tcp")) 
+    if (connect(sock, (struct sockaddr*)&addr,
+		(socklen_t)sizeof(struct sockaddr_in)) < 0) {
+      perror("[ERROR] Cannot connect to target");
+      close(sock);
+      return (-1);
+    }
+  /* No return inside loop, need to reach the end of the function to free */
+  ct = 0;
+  while (LOOP) { /* Value changed with SIGINT */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
-    if ((packet = malloc(size + 1)) == NULL)
-      return (ERROR("Cannot allocate random packet."));
+    if ((packet = malloc(size + 1)) == NULL) {
+      ret = -1;
+      ERROR("Cannot allocate random packet.");
+      break ;
+    }
     random_bytes(packet, size);
     insert_locks(packet, size, settings);
+    if (sendto(sock, packet, size, 0, (struct sockaddr*)&addr,
+	       (socklen_t)sizeof(struct sockaddr_in)) < 0) {
+      ret = -1;
+      perror("[ERROR] Cannot send packet to target");
+      break ;
+    }
     if (VERBOSE) {
       printf("[INFO] Sending %3u bytes: ", size);
       print_bytes(packet, size);
     }
     free(packet);
+    ct += 1;
   }
-  return (0);
+  close(sock);
+  printf("[LFC] %u packets sent.\n", ct);
+  return (ret);
 }
 
 /*****************************************************************************/
