@@ -2,9 +2,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <getopt.h>
 #include <ctype.h>
 #include <regex.h>
+#include <signal.h>
+#include <time.h>
 /* Network */
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -34,7 +37,8 @@
 #define TARGET_REGEX "^(tcp|udp)://([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):([0-9]+)$"
 
 /* Global */
-unsigned char VERBOSE = 0;
+bool VERBOSE = false;
+bool LOOP = false;
 
 /*****************************************************************************/
 /* Structure definition for settings                                         */
@@ -60,7 +64,7 @@ typedef struct args {
 } args_t;
 
 /*****************************************************************************/
-/* Print macros                                                              */
+/* Print macros and functions                                                */
 /*****************************************************************************/
 
 #define ERROR(x) { fprintf(stderr, "[ERROR] %s\n", x); -1; }
@@ -68,6 +72,12 @@ typedef struct args {
 #define PRINTC(x) printf("[LFC] %c\n", x)
 #define VPRINT(x) if (VERBOSE) printf("[INFO] %s\n", x)
 #define VPRINTA(x, y) if (VERBOSE) printf("[INFO] %s: %u\n", x, y)
+
+void print_bytes(char *bytes, unsigned int size) {
+  for (unsigned int i = 0; i < size; i++)
+    printf("\\x%02x", bytes[i]);
+  printf("\n");
+}
 
 /*****************************************************************************/
 /* Conversion stuff                                                          */
@@ -105,6 +115,17 @@ int str_to_bytes(char *arg, size_t length, char *bytes) {
   }
   free(str);
   return (ct - 1);
+}
+
+/*****************************************************************************/
+/* Signals handling                                                          */
+/*****************************************************************************/
+
+void sigint_handler(int sig_num)
+{
+  /* We use a global variable that will properly exit the fuzzing loop. */
+  printf("\nExiting.\n");
+  LOOP = false;
 }
 
 /*****************************************************************************/
@@ -212,9 +233,6 @@ int set_lock(args_t *settings, char *optarg) {
       regfree(&regex);
       return (-1);
     }
-    /* Debug de ses morts */
-    /* printf("%c %c\n", ptr[pmatch[1].rm_so], ptr[pmatch[1].rm_eo - 1]); */
-    /* printf("%c %c\n", ptr[pmatch[2].rm_so], ptr[pmatch[2].rm_eo - 1]); */
     ptr = strtok(NULL, DELIM);
   }
   regfree(&regex);
@@ -246,7 +264,7 @@ int set_args(args_t *settings, int ac, char **av) {
       break ;
     }
     else if (arg == 'v') { /* Enable verbose mode */
-      VERBOSE = 1; /* Global */
+      VERBOSE = true; /* Global */
       VPRINT("Verbose mode enabled.");
     }
     else if (arg == 'm') { /* Minimum size, takes unsigned int */
@@ -291,9 +309,7 @@ void settings_verbose(args_t *settings) {
     VPRINT("List of bytes to lock:");
     for (unsigned int i = 0; i < settings->locks_nb; i++) {
       printf("[INFO] At position %d: ", settings->locks[i]->position);
-      for (unsigned int j = 0; j < settings->locks[i]->length; j++)
-	printf("\\x%02x", settings->locks[i]->bytes[j]);
-      printf("\n");
+      print_bytes(settings->locks[i]->bytes, settings->locks[i]->length);
     }
   }
 }
@@ -313,7 +329,51 @@ void megafree(args_t *settings) {
 }
 
 /*****************************************************************************/
-/* Main operations                                                           */
+/* Fuzz                                                                      */
+/*****************************************************************************/
+
+void random_bytes(char *packet, unsigned int size) {
+  for (unsigned int i = 0; i < size; i++)
+    packet[i] = rand();
+}
+
+void insert_locks(char *packet, unsigned int size, args_t *settings) {
+  unsigned int pos;
+  
+  for (unsigned int i = 0; i < settings->locks_nb; i++) {
+    if (settings->locks[i]->position + settings->locks[i]->length < size) {
+      pos = settings->locks[i]->position;
+      for (unsigned int j = 0; j < settings->locks[i]->length; j++) {
+	packet[pos++] = settings->locks[i]->bytes[j];
+      }
+    }
+  }
+}
+
+int fuzz(args_t *settings) {
+  unsigned int size;
+  char *packet;
+
+  LOOP = true;
+  for (unsigned int i = 0; i < 10; i++) { /* Will be infinite loop :) */
+    if (LOOP == false)
+      break ;
+    size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
+    if ((packet = malloc(size + 1)) == NULL)
+      return (ERROR("Cannot allocate random packet."));
+    random_bytes(packet, size);
+    insert_locks(packet, size, settings);
+    if (VERBOSE) {
+      printf("[INFO] Sending %3u bytes: ", size);
+      print_bytes(packet, size);
+    }
+    free(packet);
+  }
+  return (0);
+}
+
+/*****************************************************************************/
+/* Run                                                                       */
 /*****************************************************************************/
 
 int main(int ac, char **av) {
@@ -328,7 +388,10 @@ int main(int ac, char **av) {
     megafree(&settings);
     return (-1);
   }
+  srand(time(0));
+  signal(SIGINT, sigint_handler);
   settings_verbose(&settings);
+  fuzz(&settings);
   megafree(&settings);
   return (0);
 }
