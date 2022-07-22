@@ -32,8 +32,8 @@
   "\n\n" \
   "Arguments:\n" \
   "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
-  "                  location1:content1;loc2:con2;... Content can also be a keyword." \
-  "                  (eg: 0:\\x06\\x10;2:LL 6> Header + length on 2 bytes)\n" \
+  "                  location1:content1;loc2:con2;... Content can also be a keyword.\n" \
+  "                  (eg: 0:\\x06\\x10;2:\xLL\xLL 6> Header + length on 2 bytes)\n" \
   "  -m    --min     Minimum size for packets.\n" \
   "  -n    --max     Maximum size for packets.\n" \
   "  -v    --verbose Verbose mode.\n" \
@@ -66,6 +66,10 @@ typedef struct lock {
   size_t length;
   char *bytes;
 } lock_t;
+typedef struct len {
+  int position;
+  size_t length;
+} len_t;
 
 typedef struct args {
   target_t target;
@@ -73,6 +77,7 @@ typedef struct args {
   unsigned int max_size;
   lock_t *locks[MAX_LOCKS];
   unsigned int locks_nb;
+  len_t length;
 } args_t;
 
 /*****************************************************************************/
@@ -109,7 +114,6 @@ int str_to_bytes(char *str, char *bytes) {
   for (unsigned int i = 0; i <= strlen(str); i += 2) {
     char buf[3] = { str[i], str[i+1], 0 };
     bytes[ct] = strtol(buf, NULL, 16);
-    printf("%d %x\n", ct, bytes[ct]);
     ct++;
   }
   return (ct - 1);
@@ -188,10 +192,17 @@ int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
   }
   str[ct] = 0;
   /* Replacing length modifiers. */
+  ct = 0;
   for (i = 0; i <= strlen(str); i += 2) {
-    arg[i] = arg[i] ==  'L' ? '0' : arg[i];
-    arg[i + 1] = arg[i] ==  'L' ? '0' : arg[i + 1];
+    if (str[i] == 'L') {
+      if (settings->length.position == -1)
+	settings->length.position = settings->locks[settings->locks_nb]->position;
+      str[i] = '0';
+      str[i + 1] = '0';
+      ct++;
+    }
   }
+  settings->length.length = ct;
   /* Convert it to byte array */
   ret = str_to_bytes(str, bytes);
   free(str);
@@ -279,8 +290,10 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->target = (target_t){ 0 };
   settings->min_size = MIN_SIZE;
   settings->max_size = MAX_SIZE;
-  settings->locks_nb = 0;
   memset(settings->locks, 0, sizeof(void*) * MAX_LOCKS);
+  settings->locks_nb = 0;
+  settings->length.position = -1;
+  settings->length.length = 0;
   /* Parsing */
   while ((arg = getopt_long(ac, av, "hvm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
     if (arg == 'h') { /* Print help and exit */
@@ -391,6 +404,21 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
   }
 }
 
+void insert_length(char *packet, unsigned int size, args_t *settings) {
+  char len[settings->length.length];
+  unsigned int ct, i;
+
+  ct = settings->length.length - 1;
+  for (i = 0; i < settings->length.length; i++) {
+    len[ct] = (size >> i*8) & 0xff;
+    ct--;
+  }
+  ct = 0;
+  for (i = settings->length.position; \
+       i < settings->length.position + settings->length.length && i < size; i++)
+    packet[i] = len[ct++];
+}
+
 int fuzz(args_t *settings) {
   struct sockaddr_in addr;
   unsigned int size;
@@ -416,8 +444,8 @@ int fuzz(args_t *settings) {
     }
   /* No return inside loop, need to reach the end of the function to free */
   ct = 0;
-  for (unsigned int i = 0; i < 10; i++) {
-  /* while (LOOP) { /\* Value changed with SIGINT *\/ */
+  /* for (unsigned int i = 0; i < 10; i++) { */
+  while (LOOP) { /* Value changed with SIGINT */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
     if ((packet = malloc(size + 1)) == NULL) {
       ret = -1;
@@ -426,6 +454,7 @@ int fuzz(args_t *settings) {
     }
     random_bytes(packet, size);
     insert_locks(packet, size, settings);
+    insert_length(packet, size, settings);
     if (sendto(sock, packet, size, 0, (struct sockaddr*)&addr,
 	       (socklen_t)sizeof(struct sockaddr_in)) < 0) {
       ret = -1;
