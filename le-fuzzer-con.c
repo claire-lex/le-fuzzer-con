@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <getopt.h>
 #include <ctype.h>
+#include <limits.h>
 #include <regex.h>
 #include <signal.h>
 #include <time.h>
@@ -31,17 +32,18 @@
   "\n\n" \
   "Arguments:\n" \
   "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
-  "                  location1:content1;loc2:con2;... (eg: 0:\\x06\\x10;2:\\x21).\n" \
+  "                  location1:content1;loc2:con2;... Content can also be a keyword." \
+  "                  (eg: 0:\\x06\\x10;2:LL 6> Header + length on 2 bytes)\n" \
   "  -m    --min     Minimum size for packets.\n" \
   "  -n    --max     Maximum size for packets.\n" \
   "  -v    --verbose Verbose mode.\n" \
   "\n"
 
-#define MIN_SIZE 0
-#define MAX_SIZE 4000 /* Arbitrary */
+#define MIN_SIZE 1
+#define MAX_SIZE 20 /* Arbitrary */
 #define DELIM ";"
 
-#define LOCK_REGEX "^([0-9]+):([0-9a-fA-F\\x]+)$"
+#define LOCK_REGEX "^([0-9]+):([[0-9a-fA-F\\xL]+)$"
 #define MAX_LOCKS 128 /* Arbitrary */
 
 #define TARGET_REGEX "^(tcp|udp)://([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):([0-9]+)$"
@@ -100,30 +102,16 @@ int isnum(char *str) {
   return (0);
 }
 
-int str_to_bytes(char *arg, size_t length, char *bytes) {
+int str_to_bytes(char *str, char *bytes) {
   unsigned int ct;
-  char *str;
-
-  if ((str = malloc(length + 1)) == NULL)
-    return (ERROR("Could not allocate memory for lock."));
-  memset(str, 0, length + 1);
-  /* Removing delimiter because it's an easier solution... */
-  ct = 0;
-  for (unsigned int i = 0; i < length; i++) {
-    if (arg[i] != '\\' && arg[i] != 'x') {
-      str[ct] = arg[i];
-      ct++;
-    }
-  }
-  str[ct] = 0;
-  /* Storing it to bytes using scanf */
+  
   ct = 0;
   for (unsigned int i = 0; i <= strlen(str); i += 2) {
     char buf[3] = { str[i], str[i+1], 0 };
     bytes[ct] = strtol(buf, NULL, 16);
+    printf("%d %x\n", ct, bytes[ct]);
     ct++;
   }
-  free(str);
   return (ct - 1);
 }
 
@@ -134,6 +122,7 @@ int str_to_bytes(char *arg, size_t length, char *bytes) {
 void sigint_handler(int sig_num)
 {
   /* We use a global variable that will properly exit the fuzzing loop. */
+  (void) sig_num;
   printf("\nExiting.\n");
   LOOP = false;
 }
@@ -182,6 +171,33 @@ int set_target(args_t *settings, char *arg) {
   return (0);
 }
 
+int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
+  unsigned int i, ct, ret;
+  char *str;
+
+  if ((str = malloc(length + 1)) == NULL)
+    return (ERROR("Could not allocate memory for lock."));
+  memset(str, 0, length + 1);
+  /* Removing delimiter because it's an easier solution... */
+  ct = 0;
+  for (i = 0; i < length; i++) {
+    if (arg[i] != '\\' && arg[i] != 'x') {
+      str[ct] = arg[i];
+      ct++;
+    }
+  }
+  str[ct] = 0;
+  /* Replacing length modifiers. */
+  for (i = 0; i <= strlen(str); i += 2) {
+    arg[i] = arg[i] ==  'L' ? '0' : arg[i];
+    arg[i + 1] = arg[i] ==  'L' ? '0' : arg[i + 1];
+  }
+  /* Convert it to byte array */
+  ret = str_to_bytes(str, bytes);
+  free(str);
+  return (ret);
+}
+
 /* Store one lock information into a lock_t structure (in settings_t).
 Isolated lock argument format is "position:content" where :
 - position: position in the final packet where content should be placed
@@ -205,9 +221,7 @@ int create_lock(args_t *settings, char *arg, regmatch_t pos, regmatch_t content)
   if ((bytes = malloc(content.rm_eo - content.rm_so + 1)) == NULL)
     return (ERROR("Could not allocate memory for lock."));
   memset(bytes, 0, content.rm_eo - content.rm_so + 1);
-  if ((length = str_to_bytes(&arg[content.rm_so],
-			     content.rm_eo - content.rm_so, bytes)) < 0)
-    return (-1);
+  length = set_content(settings, &arg[content.rm_so], content.rm_eo - content.rm_so, bytes);
   settings->locks[settings->locks_nb]->bytes = bytes;
   settings->locks[settings->locks_nb]->length = length;
   settings->locks_nb++;
@@ -259,7 +273,7 @@ int set_args(args_t *settings, int ac, char **av) {
     { "bitlock", required_argument, NULL, 'b' },
     { 0 }
   };
-  unsigned char arg;
+  char arg;
 
   /* Init */
   settings->target = (target_t){ 0 };
@@ -268,7 +282,7 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->locks_nb = 0;
   memset(settings->locks, 0, sizeof(void*) * MAX_LOCKS);
   /* Parsing */
-  while ((arg = getopt_long(ac, av, "hvm:n:l:b:", longopts, 0)) > -1 && arg != 255) {
+  while ((arg = getopt_long(ac, av, "hvm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
     if (arg == 'h') { /* Print help and exit */
       printf(HELP);
       break ;
@@ -368,7 +382,7 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
   unsigned int pos;
   
   for (unsigned int i = 0; i < settings->locks_nb; i++) {
-    if (settings->locks[i]->position + settings->locks[i]->length < size) {
+    if (settings->locks[i]->position + settings->locks[i]->length <= size) {
       pos = settings->locks[i]->position;
       for (unsigned int j = 0; j < settings->locks[i]->length; j++) {
 	packet[pos++] = settings->locks[i]->bytes[j];
@@ -402,7 +416,8 @@ int fuzz(args_t *settings) {
     }
   /* No return inside loop, need to reach the end of the function to free */
   ct = 0;
-  while (LOOP) { /* Value changed with SIGINT */
+  for (unsigned int i = 0; i < 10; i++) {
+  /* while (LOOP) { /\* Value changed with SIGINT *\/ */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
     if ((packet = malloc(size + 1)) == NULL) {
       ret = -1;

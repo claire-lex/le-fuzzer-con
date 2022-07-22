@@ -35,13 +35,13 @@ of bytes that should not change. You can define many locks, delimited with `;`.
 Location and content's format is: `location:content` where:
 
 * `location` is the offset in the byte array, starting from 0
-* `content` is the byte or byte array to set with format \x00
+* `content` is the byte or byte array to set with format \x00 or 00
 
 Examples:
 
 * `0:\x06\x10`: Each packet starts with `\x06\x10` (content written starting
   from position 0).
-* `1:\xff;3:\xff`: The second and forth bytes are set to '\xff'.
+* `1:\xff;3:\xff`: The second and forth bytes are set to `\xff`.
 
 TODO
 ----
