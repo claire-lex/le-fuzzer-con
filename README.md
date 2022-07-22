@@ -54,7 +54,7 @@ Examples:
 TODO
 ----
 
-* [ ] `lock`: Set `location` from the end of the end packet.
+* [ ] `lock`: Set `location` from the end of the packet.
 * [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
 * [ ] Network: Listen for responses from the server.
 * [ ] Global: Improve output (nice terminal with ncurses and stats and all).

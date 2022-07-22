@@ -33,7 +33,7 @@
   "Arguments:\n" \
   "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
   "                  location1:content1;loc2:con2;... Content can also be a keyword.\n" \
-  "                  (eg: 0:\\x06\\x10;2:\xLL\xLL 6> Header + length on 2 bytes)\n" \
+  "                  (eg: 0:\\x06\\x10;2:\\xLL\\xLL 6> Header + length on 2 bytes)\n" \
   "  -m    --min     Minimum size for packets.\n" \
   "  -n    --max     Maximum size for packets.\n" \
   "  -v    --verbose Verbose mode.\n" \
