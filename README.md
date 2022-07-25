@@ -27,8 +27,8 @@ Arguments:
                   (eg: 0:\x06\x10;2:\xLL\xLL 6> Header + length on 2 bytes)
   -m    --min     Minimum size for packets.
   -n    --max     Maximum size for packets.
+  -s    --step    Step by step mode, wait for user input to send the next frame.
   -v    --verbose Verbose mode.
-
 ```
 
 **lock** is the most important argument to use, to set the location and content
@@ -58,3 +58,4 @@ TODO
 * [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
 * [ ] Network: Listen for responses from the server.
 * [ ] Global: Improve output (nice terminal with ncurses and stats and all).
+* [ ] Global : Ability to replace random with a set of choices.

@@ -36,6 +36,7 @@
   "                  (eg: 0:\\x06\\x10;2:\\xLL\\xLL 6> Header + length on 2 bytes)\n" \
   "  -m    --min     Minimum size for packets.\n" \
   "  -n    --max     Maximum size for packets.\n" \
+  "  -s    --step    Step by step mode, wait for user input to send the next frame.\n" \
   "  -v    --verbose Verbose mode.\n" \
   "\n"
 
@@ -50,6 +51,7 @@
 
 /* Global */
 bool VERBOSE = false;
+bool STEP = false;
 bool LOOP = false;
 
 /*****************************************************************************/
@@ -127,8 +129,8 @@ void sigint_handler(int sig_num)
 {
   /* We use a global variable that will properly exit the fuzzing loop. */
   (void) sig_num;
-  printf("\nExiting.\n");
   LOOP = false;
+  printf("\nExiting.\n");
 }
 
 /*****************************************************************************/
@@ -278,6 +280,7 @@ int set_args(args_t *settings, int ac, char **av) {
   struct option longopts[] = {
     { "help", no_argument, NULL, 'h' },
     { "verbose", no_argument, NULL, 'v' },
+    { "step", no_argument, NULL, 's' },
     { "min", required_argument, NULL, 'm' },
     { "max", required_argument, NULL, 'n' },
     { "lock", required_argument, NULL, 'l' },
@@ -295,7 +298,7 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->length.position = -1;
   settings->length.length = 0;
   /* Parsing */
-  while ((arg = getopt_long(ac, av, "hvm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
+  while ((arg = getopt_long(ac, av, "hvsm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
     if (arg == 'h') { /* Print help and exit */
       printf(HELP);
       break ;
@@ -303,6 +306,10 @@ int set_args(args_t *settings, int ac, char **av) {
     else if (arg == 'v') { /* Enable verbose mode */
       VERBOSE = true; /* Global */
       VPRINT("Verbose mode enabled.");
+    }
+    else if (arg == 's') { /* Enable step by step mode */
+      STEP = true; /* Global */
+      VPRINT("Step-by-step mode enabled.");
     }
     else if (arg == 'm') { /* Minimum size, takes unsigned int */
       if (isnum(optarg) < 0)
@@ -455,21 +462,29 @@ int fuzz(args_t *settings) {
     random_bytes(packet, size);
     insert_locks(packet, size, settings);
     insert_length(packet, size, settings);
+    if (STEP) {
+      printf("[INFO] About to send %3u bytes: ", size);
+      print_bytes(packet, size);
+      printf("Press enter to continue.\n");
+      getchar();
+    }
     if (sendto(sock, packet, size, 0, (struct sockaddr*)&addr,
 	       (socklen_t)sizeof(struct sockaddr_in)) < 0) {
       ret = -1;
       perror("[ERROR] Cannot send packet to target");
       break ;
     }
+    /* Output and throughput control */
     if (VERBOSE) {
       printf("[INFO] Sending %3u bytes: ", size);
       print_bytes(packet, size);
     }
+    else if (!STEP)
+      printf("[LFC] %u packets sent.\r", ct);
     free(packet);
     ct += 1;
   }
   close(sock);
-  printf("[LFC] %u packets sent.\n", ct);
   return (ret);
 }
 
