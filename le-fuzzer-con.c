@@ -33,7 +33,8 @@
   "Arguments:\n" \
   "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
   "                  location1:content1;loc2:con2;... Content can also be a keyword.\n" \
-  "                  (eg: 0:\\x06\\x10;2:\\xLL\\xLL 6> Header + length on 2 bytes)\n" \
+  "                  (eg: 0:\\x06\\x10\\xLL\\xLL;-1:\\x01 -> Header on 4B ending with\n" \
+  "                  total packet length on 2B, last byte is always \\x01)\n" \
   "  -m    --min     Minimum size for packets.\n" \
   "  -n    --max     Maximum size for packets.\n" \
   "  -s    --step    Step by step mode, wait for user input to send the next frame.\n" \
@@ -44,7 +45,7 @@
 #define MAX_SIZE 20 /* Arbitrary */
 #define DELIM ";"
 
-#define LOCK_REGEX "^([0-9]+):([[0-9a-fA-F\\xL]+)$"
+#define LOCK_REGEX "^([-0-9]+):([[0-9a-fA-F\\xL]+)$"
 #define MAX_LOCKS 128 /* Arbitrary */
 
 #define TARGET_REGEX "^(tcp|udp)://([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):([0-9]+)$"
@@ -64,7 +65,7 @@ typedef struct target {
   unsigned int port;
 } target_t;
 typedef struct lock {
-  unsigned int position;
+  int position; /* Position can be < 0 */
   size_t length;
   char *bytes;
 } lock_t;
@@ -402,13 +403,17 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
   unsigned int pos;
   
   for (unsigned int i = 0; i < settings->locks_nb; i++) {
-    if (settings->locks[i]->position + settings->locks[i]->length <= size) {
+    /* Handling negative position: set bytes from end */
+    if (settings->locks[i]->position < 0) {
+      pos = size + settings->locks[i]->position; /* position negative */
+      for (unsigned int j = 0; j + pos <= size; j++)
+	packet[pos++] = settings->locks[i]->bytes[j];
+    }
+    else if (settings->locks[i]->position + settings->locks[i]->length <= size) {
       pos = settings->locks[i]->position;
       for (unsigned int j = 0; j < settings->locks[i]->length; j++) {
 	packet[pos++] = settings->locks[i]->bytes[j];
-	printf("%x", settings->locks[i]->bytes[j]);
       }
-      printf("\n");
     }
   }
 }

@@ -24,7 +24,8 @@ Usage
 Arguments:
   -l    --lock    List of fixed bytes (same for all packets) Format is:
                   location1:content1;loc2:con2;... Content can also be a keyword.
-                  (eg: 0:\x06\x10;2:\xLL\xLL 6> Header + length on 2 bytes)
+                  (eg: 0:\x06\x10\xLL\xLL;-1:\x01 -> Header on 4B ending with
+		  total packet length on 2B, last byte is always \x01)
   -m    --min     Minimum size for packets.
   -n    --max     Maximum size for packets.
   -s    --step    Step by step mode, wait for user input to send the next frame.
@@ -36,7 +37,8 @@ of bytes that should not change. You can define many locks, delimited with `;`.
 
 Location and content's format is: `location:content` where:
 
-* `location` is the offset in the byte array, starting from 0
+* `location` is the offset in the byte array. If < 0, it's the position from the
+  end of the string (e.g.: -2 == the last 2 bytes of the packet)
 
 * `content` is the byte or byte array to set with format `\x00` or `00`. `content`
   can also contain the total length of the packet on one or several bytes with
@@ -50,12 +52,14 @@ Examples:
 * `1:\xff;3:\xff`: The second and forth bytes are set to `\xff`.
 * `0:\x06\x10;4:\xLL\xLL`: Each packet starts with `\x06\x10`, bytes 4-5 contain
   the total length of the packet.
+* `0:\x01;-1:\x01`: Packets always start and end with `\x01`.
 
 TODO
 ----
 
 * [X] BUGFIX: Length modifier only works standalone
-* [ ] `lock`: Set `location` from the end of the packet.
+* [X] `lock`: Set `location` from the end of the packet.
+* [ ] `lock`: Set length modifier's location from the end of the packet
 * [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
 * [ ] Network: Listen for responses from the server.
 * [ ] Global: Improve output (nice terminal with ncurses and stats and all).

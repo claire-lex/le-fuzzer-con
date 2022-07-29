@@ -16,18 +16,18 @@ all	: $(NAME)
 
 $(NAME) : $(OBJS)
 	$(CC) $(CFLAGS) -o $(NAME) $(OBJS)
-	@ echo "\033[1;5;35m--> $(NAME) : C o m p i l a t i o n   C o m p l e t e\033[0m"
+	@ echo "Done compiling $(NAME)."
 
 debug : $(OBJS)
 	$(CC) $(CFLAGS) $(GFLAGS) -o $(NAME) $(OBJS)
-	@ echo "\033[1;5;35m--> $(NAME) : [DEBUG] C o m p i l a t i o n   C o m p l e t e\033[0m"
+	@ echo "Done compiling $(NAME) (debug)."
 
 clean	:
 	$(RM) $(OBJS)
-	@ echo "\033[0;35m--> $(NAME) : C l e a n e d\033[0m"
+	@ echo "Cleaned."
 
 fclean	:
 	$(RM) $(OBJS) $(NAME)
-	@ echo "\033[0;35m--> $(NAME) : C l e a n e d\033[0m"
+	@ echo "Cleaned."
 
 re	: fclean all
