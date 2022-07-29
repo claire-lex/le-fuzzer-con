@@ -70,6 +70,7 @@ typedef struct lock {
   char *bytes;
 } lock_t;
 typedef struct len {
+  bool set;
   int position;
   size_t length;
 } len_t;
@@ -198,8 +199,10 @@ int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
   ct = 0;
   for (i = 0; i <= strlen(str); i += 2) {
     if (str[i] == 'L') {
-      if (settings->length.position == -1)
+      if (!settings->length.set) {
 	settings->length.position = settings->locks[settings->locks_nb]->position + i / 2;
+	settings->length.set = true;
+      }
       str[i] = '0';
       str[i + 1] = '0';
       ct++;
@@ -296,7 +299,8 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->max_size = MAX_SIZE;
   memset(settings->locks, 0, sizeof(void*) * MAX_LOCKS);
   settings->locks_nb = 0;
-  settings->length.position = -1;
+  settings->length.set = false;
+  settings->length.position = 0;
   settings->length.length = 0;
   /* Parsing */
   while ((arg = getopt_long(ac, av, "hvsm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
@@ -400,37 +404,44 @@ void random_bytes(char *packet, unsigned int size) {
 }
 
 void insert_locks(char *packet, unsigned int size, args_t *settings) {
-  unsigned int pos;
+  unsigned int j, pos;
   
   for (unsigned int i = 0; i < settings->locks_nb; i++) {
     /* Handling negative position: set bytes from end */
     if (settings->locks[i]->position < 0) {
       pos = size + settings->locks[i]->position; /* position negative */
-      for (unsigned int j = 0; j + pos <= size; j++)
+      for (j = 0; j + pos < size; j++)
 	packet[pos++] = settings->locks[i]->bytes[j];
     }
     else if (settings->locks[i]->position + settings->locks[i]->length <= size) {
       pos = settings->locks[i]->position;
-      for (unsigned int j = 0; j < settings->locks[i]->length; j++) {
+      for (j = 0; j < settings->locks[i]->length; j++)
 	packet[pos++] = settings->locks[i]->bytes[j];
-      }
     }
   }
 }
 
 void insert_length(char *packet, unsigned int size, args_t *settings) {
   char len[settings->length.length];
-  unsigned int ct, i;
+  unsigned int i, pos;
 
-  ct = settings->length.length - 1;
+  if (!settings->length.set)
+    return ;
+  pos = settings->length.length - 1;
   for (i = 0; i < settings->length.length; i++) {
-    len[ct] = (size >> i*8) & 0xff;
-    ct--;
+    len[pos] = (size >> i*8) & 0xff;
+    pos--;
   }
-  ct = 0;
-  for (i = settings->length.position; \
-       i < settings->length.position + settings->length.length && i < size; i++)
-    packet[i] = len[ct++];
+  if (settings->length.position < 0) {
+    pos = size + settings->length.position;
+    for (i = 0; i < settings->length.length && pos < size; i++)
+      packet[pos++] = len[i];
+  }
+  else if (settings->length.position + settings->length.length <= size) {
+    pos = settings->length.position;
+    for (i = 0; i < settings->length.length; i++)
+      packet[pos++] = len[i];
+  }
 }
 
 int fuzz(args_t *settings) {

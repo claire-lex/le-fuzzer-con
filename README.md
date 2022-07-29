@@ -52,15 +52,17 @@ Examples:
 * `1:\xff;3:\xff`: The second and forth bytes are set to `\xff`.
 * `0:\x06\x10;4:\xLL\xLL`: Each packet starts with `\x06\x10`, bytes 4-5 contain
   the total length of the packet.
+* `-2:\xLL\xLL`: All packets end with length modifier on 2 bytes.
 * `0:\x01;-1:\x01`: Packets always start and end with `\x01`.
 
 TODO
 ----
 
-* [X] BUGFIX: Length modifier only works standalone
-* [X] `lock`: Set `location` from the end of the packet.
-* [ ] `lock`: Set length modifier's location from the end of the packet
-* [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
+* [ ] BUGFIX: `-l "-2:\xLL;-1:\x11"`
 * [ ] Network: Listen for responses from the server.
 * [ ] Global: Improve output (nice terminal with ncurses and stats and all).
 * [ ] Global : Ability to replace random with a set of choices.
+* [ ] Refactoring: `insert_locks` and `insert_length`
+* [X] `lock`: Set `location` from the end of the packet.
+* [X] `lock`: Set length modifier's location from the end of the packet
+* [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
