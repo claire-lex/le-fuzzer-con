@@ -54,6 +54,7 @@ Examples:
 TODO
 ----
 
+* [X] BUGFIX: Length modifier only works standalone
 * [ ] `lock`: Set `location` from the end of the packet.
 * [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).
 * [ ] Network: Listen for responses from the server.

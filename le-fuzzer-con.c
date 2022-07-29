@@ -198,7 +198,7 @@ int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
   for (i = 0; i <= strlen(str); i += 2) {
     if (str[i] == 'L') {
       if (settings->length.position == -1)
-	settings->length.position = settings->locks[settings->locks_nb]->position;
+	settings->length.position = settings->locks[settings->locks_nb]->position + i / 2;
       str[i] = '0';
       str[i + 1] = '0';
       ct++;
@@ -406,7 +406,9 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
       pos = settings->locks[i]->position;
       for (unsigned int j = 0; j < settings->locks[i]->length; j++) {
 	packet[pos++] = settings->locks[i]->bytes[j];
+	printf("%x", settings->locks[i]->bytes[j]);
       }
+      printf("\n");
     }
   }
 }
