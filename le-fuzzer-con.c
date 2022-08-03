@@ -28,7 +28,7 @@
   "that should not be random to be accepted by the remote server (e.g. headers)." \
   "\n\n" \
   "  host            Target information with format proto://ip:port.\n" \
-  "                  Ex: udp://192.168.1.1:3671" \
+  "                  Ex: udp://192.168.1.100:4444" \
   "\n\n" \
   "Arguments:\n" \
   "  -l    --lock    List of fixed bytes (same for all packets) Format is:\n" \
@@ -210,7 +210,8 @@ int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
       ct++;
     }
   }
-  settings->length.length = ct;
+  if (ct > 0)
+    settings->length.length = ct;
   /* Convert it to byte array */
   ret = str_to_bytes(str, bytes);
   free(str);
@@ -479,7 +480,6 @@ int fuzz(args_t *settings) {
     }
   /* No return inside loop, need to reach the end of the function to free */
   ct = 0;
-  /* for (unsigned int i = 0; i < 10; i++) { */
   while (LOOP) { /* Value changed with SIGINT */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
     if ((packet = malloc(size + 1)) == NULL) {
