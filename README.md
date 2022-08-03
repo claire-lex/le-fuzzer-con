@@ -1,18 +1,35 @@
 Le fuzzer con
 =============
 
-Another dumb network fuzzer, but not the worst one*.
+![Licence](https://img.shields.io/github/license/claire-lex/le-fuzzer-con)
 
-Le fuzzer con creates packets as byte arrays that are sent to a server to fuzz
-it. The content is random by default, but we can set bytes that should not be
-random (e.g. a valid header). The aim is to create packets that are not directly
-dropped by servers, so that our fuzzer reaches and starts testing the parsing
-and processing implementations.
+Le Fuzzer Con* (LFC) creates network packets as random byte arrays that are sent
+to a server to fuzz it. The thing with LFC is that we can lock bytes that should
+not be random (e.g. a valid header). The aim is to create packets that are not
+directly dropped by servers, so that our fuzzed frames reach the parsing and
+processing implementations and cover more code. LFC keeps no track of previous
+packets (it's just random) and gives no feedback about what happens server-side,
+you have to monitor it yourself.
 
-So far, le fuzzer con gives no feedback about what happens server-side, you have
-to monitor it yourself.
+> *"Le fuzzer con" means "The dumb fuzzer" in French, because it is meant to be
+  dumb (i.e. stateless and protocol-independent). f you want a fine-tuned
+  fuzzing process, I recommend you use a real fuzzer instead.
 
-> "Le fuzzer con" means "The dumb fuzzer" in French.
+TL;DR
+-----
+
+```
+make
+./le-fuzzer-con udp://192.168.1.100:4444 -l "0:\x01\x01;4:\xLL\xLL" -m 6 -n 20
+-d 1
+```
+
+This command :
+
+* Creates almost-random packets from 6 to 20 bytes long
+* Packets always start with 0101 and have the total packet length on 2 bytes
+  written on bytes 4 et 5
+* They are sent via UDP to 192.168.100 on port 4444 every 1 millisecond.
 
 Usage
 -----
@@ -25,9 +42,10 @@ Arguments:
   -l    --lock    List of fixed bytes (same for all packets) Format is:
                   location1:content1;loc2:con2;... Content can also be a keyword.
                   (eg: 0:\x06\x10\xLL\xLL;-1:\x01 -> Header on 4B ending with
-		  total packet length on 2B, last byte is always \x01)
+                  total packet length on 2B, last byte is always \x01)
   -m    --min     Minimum size for packets.
   -n    --max     Maximum size for packets.
+  -d    --delay   Delay before sending the next packet (in milliseconds).
   -s    --step    Step by step mode, wait for user input to send the next frame.
   -v    --verbose Verbose mode.
 ```
@@ -55,14 +73,19 @@ Examples:
 * `-2:\xLL\xLL`: All packets end with length modifier on 2 bytes.
 * `0:\x01;-1:\x01`: Packets always start and end with `\x01`.
 
-TODO
-----
+TODO and ideas
+--------------
 
 * [ ] BUGFIX: `-l "-2:\xLL;-1:\x11"`
-* [ ] Network: Listen for responses from the server.
-* [ ] Global: Improve output (nice terminal with ncurses and stats and all).
-* [ ] Global : Ability to replace random with a set of choices.
 * [ ] Refactoring: `insert_locks` and `insert_length`
+* [ ] Listen for responses from the server.
+* [ ] Send a pre and/or post request before sending the fuzzed one.
+* [ ] Replace random with a set of choices for some bytes.
+* [ ] Extract base frames from pcap files, tell which bytes should not be
+      changed (`0:\x==\x==`: first 2 bytes always kept as is).
+* [ ] Option to use radamsa for mutations with pcap mode?
+* [ ] Improve output (nice terminal with ncurses and stats and all).
+* [X] `--delay` option to add a delay (in ms) between each frame.
 * [X] `lock`: Set `location` from the end of the packet.
-* [X] `lock`: Set length modifier's location from the end of the packet
+* [X] `lock`: Set length modifier's location from the end of the packet.
 * [X] `lock`: Make `content` be the total length of the packet, on 1+ byte(s).

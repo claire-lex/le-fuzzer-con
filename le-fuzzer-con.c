@@ -35,8 +35,9 @@
   "                  location1:content1;loc2:con2;... Content can also be a keyword.\n" \
   "                  (eg: 0:\\x06\\x10\\xLL\\xLL;-1:\\x01 -> Header on 4B ending with\n" \
   "                  total packet length on 2B, last byte is always \\x01)\n" \
-  "  -m    --min     Minimum size for packets.\n" \
-  "  -n    --max     Maximum size for packets.\n" \
+  "  -m    --min     Minimum size for packets (default: 1).\n" \
+  "  -n    --max     Maximum size for packets (default: 20 (arbitrary)).\n" \
+  "  -d    --delay   Delay in ms before sending the next packet (default: 0).\n" \
   "  -s    --step    Step by step mode, wait for user input to send the next frame.\n" \
   "  -v    --verbose Verbose mode.\n" \
   "\n"
@@ -79,6 +80,7 @@ typedef struct args {
   target_t target;
   unsigned int min_size;
   unsigned int max_size;
+  unsigned int delay;
   lock_t *locks[MAX_LOCKS];
   unsigned int locks_nb;
   len_t length;
@@ -287,6 +289,7 @@ int set_args(args_t *settings, int ac, char **av) {
     { "step", no_argument, NULL, 's' },
     { "min", required_argument, NULL, 'm' },
     { "max", required_argument, NULL, 'n' },
+    { "delay", required_argument, NULL, 'd'},
     { "lock", required_argument, NULL, 'l' },
     { "bitlock", required_argument, NULL, 'b' },
     { 0 }
@@ -297,13 +300,15 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->target = (target_t){ 0 };
   settings->min_size = MIN_SIZE;
   settings->max_size = MAX_SIZE;
+  settings->delay = 0;
   memset(settings->locks, 0, sizeof(void*) * MAX_LOCKS);
   settings->locks_nb = 0;
   settings->length.set = false;
   settings->length.position = 0;
   settings->length.length = 0;
   /* Parsing */
-  while ((arg = getopt_long(ac, av, "hvsm:n:l:b:", longopts, 0)) > -1 && arg < SCHAR_MAX) {
+  while ((arg = getopt_long(ac, av, "hvsm:n:d:l:b:", longopts, 0)) > -1
+	 && arg < SCHAR_MAX) {
     if (arg == 'h') { /* Print help and exit */
       printf(HELP);
       break ;
@@ -325,6 +330,11 @@ int set_args(args_t *settings, int ac, char **av) {
       if (isnum(optarg) < 0)
 	return (ERROR("Maximum size should be an unsigned integer."));
       settings->max_size = atoi(optarg);
+    }
+    else if (arg == 'd') { /* Delay between packets, takes unsigned int */
+      if (isnum(optarg) < 0)
+	return (ERROR("Delay should be an unsigned integer."));
+      settings->delay = atoi(optarg);
     }
     else if (arg == 'l') { /* Locked bytes, takes weird regex */
       if (set_lock(settings, optarg) < 0)
@@ -501,6 +511,7 @@ int fuzz(args_t *settings) {
       printf("[LFC] %u packets sent.\r", ct);
     free(packet);
     ct += 1;
+    usleep(settings->delay * 1000); /* We want milliseconds */
   }
   close(sock);
   return (ret);
