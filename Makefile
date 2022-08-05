@@ -7,8 +7,8 @@ SRCS	= le-fuzzer-con.c
 OBJS	= $(SRCS:.c=.o)
 
 CC	= gcc
-CFLAGS	= -W
-GFLAGS = -ggdb
+CFLAGS	= -Wall -Wextra -Werror
+GFLAGS = -g
 RM	= rm -f
 
 

@@ -1,3 +1,22 @@
+/*
+ * *** Le Fuzzer Con ***
+ * Claire Lex, 2022 - https://github.com/claire-lex/le-fuzzer-con
+ *
+ * Le Fuzzer Con* (LFC) creates network packets as random byte arrays that are
+ * sent to a server to fuzz it. The thing with LFC is that we can lock bytes that
+ * should not be random (e.g. a valid header). The aim is to create packets that
+ * are not directly dropped by servers, so that our fuzzed frames reach the
+ * parsing and processing implementations and cover more code. LFC keeps no track
+ * of previous packets (it's just random) and gives no feedback about what
+ * happens server-side, you have to monitor it yourself.
+ *
+ * * "Le fuzzer con" means "The dumb fuzzer" in French, because it is meant to be
+ * dumb (i.e. stateless and protocol-independent). f you want a fine-tuned
+ * fuzzing process, I recommend you use a real fuzzer instead.
+ *
+ * Licensed under GPLv3.
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -90,7 +109,9 @@ typedef struct args {
 /* Print macros and functions                                                */
 /*****************************************************************************/
 
+#pragma GCC diagnostic ignored "-Wunused-value"
 #define ERROR(x) { fprintf(stderr, "[ERROR] %s\n", x); -1; }
+
 #define PRINT(x) printf("[LFC] %s\n", x)
 #define PRINTC(x) printf("[LFC] %c\n", x)
 #define VPRINT(x) if (VERBOSE) printf("[INFO] %s\n", x)
@@ -126,6 +147,23 @@ int str_to_bytes(char *str, char *bytes) {
 }
 
 /*****************************************************************************/
+/* Network                                                                      */
+/*****************************************************************************/
+
+int create_socket(args_t *settings) {
+  int sock;
+
+  sock = -1;
+  if (!strcmp(settings->target.proto, "udp"))
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+  else if (!strcmp(settings->target.proto, "tcp"))
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0)
+    return(ERROR("Failed to create socket."));
+  return (sock);
+}
+
+/*****************************************************************************/
 /* Signals handling                                                          */
 /*****************************************************************************/
 
@@ -142,11 +180,12 @@ void sigint_handler(int sig_num)
 /*****************************************************************************/
 
 /* Store target information into a target_t structure (in settings_t).
-Target argument format is "proto://ip:port" where :
-- proto: either "tcp" or "udp"
-- ip; IPv4 address ("A.B.C.D")
-- port: Port number (1-65535)
+ * Target argument format is "proto://ip:port" where :
+ * - proto: either "tcp" or "udp"
+ * - ip; IPv4 address ("A.B.C.D")
+ * - port: Port number (1-65535)
 */
+
 int set_target(args_t *settings, char *arg) {
   regex_t regex;
   regmatch_t pmatch[4];
@@ -219,10 +258,11 @@ int set_content(args_t *settings, char *arg, size_t length, char *bytes) {
 }
 
 /* Store one lock information into a lock_t structure (in settings_t).
-Isolated lock argument format is "position:content" where :
-- position: position in the final packet where content should be placed
-- content: byte array with format \x00\x00\x00..."
+ * Isolated lock argument format is "position:content" where :
+ * - position: position in the final packet where content should be placed
+ * - content: byte array with format \x00\x00\x00..."
 */
+
 int create_lock(args_t *settings, char *arg, regmatch_t pos, regmatch_t content) {
   char *tmp_position; /* Will be converted to uint for storage */
   char *bytes;
@@ -251,9 +291,9 @@ int create_lock(args_t *settings, char *arg, regmatch_t pos, regmatch_t content)
 }
 
 /* Parse the lock argument to extract information about locks.
-Lock argument format is "lock1;lock2;..." where each lock contains the
-location and content that will be fixed in a packet with format
-"position:content"
+ * Lock argument format is "lock1;lock2;..." where each lock contains the
+ * location and content that will be fixed in a packet with format
+ * "position:content"
 */
 int set_lock(args_t *settings, char *optarg) {
   char *ptr;
@@ -375,38 +415,7 @@ void settings_verbose(args_t *settings) {
 }
 
 /*****************************************************************************/
-/* Cleaning before exit                                                      */
-/*****************************************************************************/
-
-void megafree(args_t *settings) {
-  for (unsigned int i = 0; i < settings->locks_nb; i++) {
-    if (settings->locks[i] != NULL) {
-      if (settings->locks[i]->bytes != NULL)
-        free(settings->locks[i]->bytes);
-      free(settings->locks[i]);
-    }
-  }
-}
-
-/*****************************************************************************/
-/* Network                                                                      */
-/*****************************************************************************/
-
-int create_socket(args_t *settings) {
-  int sock;
-
-  sock = -1;
-  if (!strcmp(settings->target.proto, "udp"))
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-  else if (!strcmp(settings->target.proto, "tcp"))
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0)
-    return(ERROR("Failed to create socket."));
-  return (sock);
-}
-
-/*****************************************************************************/
-/* Fuzz                                                                      */
+/* Fuzzing                                                                   */
 /*****************************************************************************/
 
 void random_bytes(char *packet, unsigned int size) {
@@ -418,9 +427,9 @@ void insert_locks(char *packet, unsigned int size, args_t *settings) {
   unsigned int j, pos;
   
   for (unsigned int i = 0; i < settings->locks_nb; i++) {
-    /* Handling negative position: set bytes from end */
+    /* Handling negative location: set bytes from end */
     if (settings->locks[i]->position < 0) {
-      pos = size + settings->locks[i]->position; /* position negative */
+      pos = size + settings->locks[i]->position; /* neg: size + -1 */
       for (j = 0; j + pos < size; j++)
 	packet[pos++] = settings->locks[i]->bytes[j];
     }
@@ -443,6 +452,7 @@ void insert_length(char *packet, unsigned int size, args_t *settings) {
     len[pos] = (size >> i*8) & 0xff;
     pos--;
   }
+  /* Handling negative location: set bytes from end */
   if (settings->length.position < 0) {
     pos = size + settings->length.position;
     for (i = 0; i < settings->length.length && pos < size; i++)
@@ -478,9 +488,9 @@ int fuzz(args_t *settings) {
       close(sock);
       return (-1);
     }
-  /* No return inside loop, need to reach the end of the function to free */
   ct = 0;
-  while (LOOP) { /* Value changed with SIGINT */
+  while (LOOP) { /* Value changed with SIGINT only */
+    /* No return inside loop, need to reach the end of the function to free */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
     if ((packet = malloc(size + 1)) == NULL) {
       ret = -1;
@@ -503,11 +513,7 @@ int fuzz(args_t *settings) {
       break ;
     }
     /* Output and throughput control */
-    if (VERBOSE) {
-      printf("[INFO] Sending %3u bytes: ", size);
-      print_bytes(packet, size);
-    }
-    else if (!STEP)
+    if (!STEP)
       printf("[LFC] %u packets sent.\r", ct);
     free(packet);
     ct += 1;
@@ -515,6 +521,20 @@ int fuzz(args_t *settings) {
   }
   close(sock);
   return (ret);
+}
+
+/*****************************************************************************/
+/* Cleaning before exit                                                      */
+/*****************************************************************************/
+
+void megafree(args_t *settings) {
+  for (unsigned int i = 0; i < settings->locks_nb; i++) {
+    if (settings->locks[i] != NULL) {
+      if (settings->locks[i]->bytes != NULL)
+        free(settings->locks[i]->bytes);
+      free(settings->locks[i]);
+    }
+  }
 }
 
 /*****************************************************************************/
