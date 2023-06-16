@@ -510,6 +510,10 @@ int fuzz(args_t *settings) {
 	       (socklen_t)sizeof(struct sockaddr_in)) < 0) {
       ret = -1;
       perror("[ERROR] Cannot send packet to target");
+      /* TCP: We don't want to kill the fuzzer, so we start again. */
+      /* Too many sockets involved, that's why we wait. */
+      usleep(settings->delay * 1000 + 1000);
+      fuzz(settings);
       break ;
     }
     /* Output and throughput control */
