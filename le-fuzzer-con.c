@@ -100,6 +100,7 @@ typedef struct args {
   unsigned int min_size;
   unsigned int max_size;
   unsigned int delay;
+  unsigned int total;
   lock_t *locks[MAX_LOCKS];
   unsigned int locks_nb;
   len_t length;
@@ -328,6 +329,7 @@ int set_args(args_t *settings, int ac, char **av) {
     { "help", no_argument, NULL, 'h' },
     { "verbose", no_argument, NULL, 'v' },
     { "step", no_argument, NULL, 's' },
+    { "total", required_argument, NULL, 't' },
     { "min", required_argument, NULL, 'm' },
     { "max", required_argument, NULL, 'n' },
     { "delay", required_argument, NULL, 'd'},
@@ -342,13 +344,14 @@ int set_args(args_t *settings, int ac, char **av) {
   settings->min_size = MIN_SIZE;
   settings->max_size = MAX_SIZE;
   settings->delay = 0;
+  settings->total = 0;
   memset(settings->locks, 0, sizeof(void*) * MAX_LOCKS);
   settings->locks_nb = 0;
   settings->length.set = false;
   settings->length.position = 0;
   settings->length.length = 0;
   /* Parsing */
-  while ((arg = getopt_long(ac, av, "hvsm:n:d:l:b:", longopts, 0)) > -1
+  while ((arg = getopt_long(ac, av, "hvst:m:n:d:l:b:", longopts, 0)) > -1
 	 && arg < SCHAR_MAX) {
     if (arg == 'h') { /* Print help and exit */
       printf(HELP);
@@ -361,6 +364,10 @@ int set_args(args_t *settings, int ac, char **av) {
     else if (arg == 's') { /* Enable step by step mode */
       STEP = true; /* Global */
       VPRINT("Step-by-step mode enabled.");
+    }
+    else if (arg == 't') { /* Only send a defined number of requests */
+      settings->total = atoi(optarg);
+      VPRINT("Only the specified amount of requests will be sent.");
     }
     else if (arg == 'm') { /* Minimum size, takes unsigned int */
       if (isnum(optarg) < 0)
@@ -490,6 +497,9 @@ int fuzz(args_t *settings) {
     }
   ct = 0;
   while (LOOP) { /* Value changed with SIGINT only */
+    /* First check if total number of requests to send has been reached (-t) */
+    if (settings->total > 0 && ct >= settings->total)
+      break ;
     /* No return inside loop, need to reach the end of the function to free */
     size = rand() % (settings->max_size - settings->min_size + 1) + settings->min_size;
     if ((packet = malloc(size + 1)) == NULL) {
